@@ -12,6 +12,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "datejs": "^1.0.0-rc3",
+    "dayjs": "^1.11.7",
     "express": "^4.18.2",
     "nodemon": "^2.0.20",
     "pg": "^8.8.0"
