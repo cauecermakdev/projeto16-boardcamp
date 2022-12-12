@@ -118,13 +118,15 @@ app.post("/games", async (req, res) => {
 
 app.get("/games", async (req, res) => {
   const { name } = req.query;
-  const nameLowerCase = name.toLowerCase();
-  const nameUpCase = nameLowerCase[0].toUpperCase() + nameLowerCase.substring(1);
+  /* const nameLowerCase = name.toLowerCase();
+  const nameUpCase = nameLowerCase[0].toUpperCase() + nameLowerCase.substring(1); */
   //res.send(nameLowerCase + " e " + nameUpCase);
 
   let games = undefined;
 
   if (name) {
+    const nameLowerCase = name.toLowerCase();
+    const nameUpCase = nameLowerCase[0].toUpperCase() + nameLowerCase.substring(1);
 
     games = await connection.query(
       `SELECT games.*, categories.name as "categoryName" FROM games JOIN categories ON games."categoryId" = categories.id WHERE games.name LIKE $1 OR games.name LIKE $2`,
@@ -307,13 +309,13 @@ app.put("/customers/:id", async (req, res) => {
   let isSamePerson = true;
 
   const isThereCpfInRegister = idPessoaComCpf.rows.length > 0;
-  if(isThereCpfInRegister){
+  if (isThereCpfInRegister) {
     isSamePerson = (idPessoaComCpf.rows[0].id === parseInt(id));
-    
-  }
-  
 
- 
+  }
+
+
+
   if (isSamePerson) {
 
     try {
@@ -328,54 +330,274 @@ app.put("/customers/:id", async (req, res) => {
 
   } else {
     res.status(409).send("CPF existente em outro usuário, você não pode atualizar");
-  } 
+  }
 
 
 })
 
 
-app.get("/api/products", async (req, res) => {
+/* app.get("/api/products", async (req, res) => {
   const products = await connection.query("SELECT * FROM produtos");
   res.send(products.rows);
-});
-
-app.post("/rentals", (req, res) => {
-
-  //post body
-  /*   {
-      customerId: 1,
-      gameId: 1,
-      daysRented: 3
-    } */
-
-
-  //table rentals
-  /*   {
-      id: 1,
-      customerId: 1,
-      gameId: 1,
-      rentDate: '2021-06-20',    // data em que o aluguel foi feito
-      daysRented: 3,             // por quantos dias o cliente agendou o aluguel
-      returnDate: null,          // data que o cliente devolveu o jogo (null enquanto não devolvido)
-      originalPrice: 4500,       // preço total do aluguel em centavos (dias alugados vezes o preço por dia do jogo)
-      delayFee: null             // multa total paga por atraso (dias que passaram do prazo vezes o preço por dia do jogo)
-    } */
-
-
-
-})
-
-/* app.get("/rentals",(req,res)=>{
-
-})
-
-app.post(" /rentals/:id/return",(req,res)=>{
-
-})
-
-app.delete("/rentals/:id",(req,res)=>{
-
 }); */
+
+async function originalPriceOf(gameId, daysRented) {
+  console.log("entra originalPriceOf");
+  const idGameSearch = await connection.query(
+    `SELECT games."pricePerDay" FROM games WHERE games.id = $1`,
+    [gameId]
+  );
+
+  let totalPrice = 0;
+  //if(idGameSearch.rows[0] && daysRented > 0){
+  const priceGame = idGameSearch.rows[0].pricePerDay;
+  totalPrice = parseInt(priceGame) * parseInt(daysRented);
+  //}
+  console.log(totalPrice);
+  return totalPrice;
+}
+
+async function customerNotExist(id) {
+  const result = await connection.query(
+    `SELECT * FROM customers WHERE customers.id = $1`,
+    [id]
+  )
+  if (result.rows[0]) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
+async function idGameExist(gameId) {
+
+  const result = await connection.query(
+    `SELECT * FROM games WHERE games.id = $1`,
+    [gameId]
+  );
+
+  if (result.rows.length > 0) {
+    return true;
+  } else {
+    return false;
+  }
+
+}
+
+async function numberCurrentRentals(gameId) {
+  const result = await connection.query(
+    `SELECT * FROM rentals WHERE rentals."gameId" = $1`,
+    [gameId]
+  );
+
+  return result.rows.length;
+}
+
+async function isThereStock(gameId) {
+  const result = await connection.query(
+    `SELECT games."stockTotal" FROM games WHERE games.id = $1`,
+    [gameId]);
+
+  const gameStock = result.rows[0].stockTotal;
+
+  const numCurrentRentals = await numberCurrentRentals(gameId);
+
+  if (numCurrentRentals < gameStock) {
+    return true;
+  } else {
+    return false;
+  }
+
+}
+
+app.post("/rentals", async (req, res) => {
+  const { customerId, gameId, daysRented } = req.body;
+
+  //
+  if (await customerNotExist(customerId)) {
+    res.status(400).send("cliente não existe")
+    return;
+  }
+  //
+  if (!await idGameExist(gameId)) {
+    res.status(400).send("id game not exist");
+    return;
+  }
+  //
+  if (daysRented < 0) {
+    res.status(400).send(daysRented < 0);
+    return;
+  }
+
+  if (!await isThereStock(gameId)) {
+    res.status(400).send("Não tem mais em estoque, estão todos alugados");
+    return;
+  }
+
+  const today = dayjs().format("YYYY-MM-DD");
+  //
+  const originalPrice = await originalPriceOf(gameId, daysRented);
+
+  /*  console.log([customerId, gameId, today, daysRented, null, originalPrice, null]) */
+
+  try {
+    const result = await connection.query(
+      `INSERT INTO rentals ("customerId","gameId","rentDate","daysRented","returnDate","originalPrice","delayFee")
+      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [customerId, gameId, today, daysRented, null, originalPrice, null]
+    );
+
+    res.status(201).send("rentals inserido");
+  } catch (err) {
+    console.log(err);
+    res.status(400).send("rentals nao inserido");
+  }
+
+})
+
+async function allRentalsGet(){
+  const allRentals = await connection.query(
+    `SELECT * FROM rentals;`
+  );
+
+  const customer = await connection.query(
+    `SELECT * FROM customers WHERE customers.id = $1`,
+    [customerId]
+  );
+
+  const game = await connection.query(
+    `SELECT * FROM games WHERE games.id = $1`,
+    [gameId]
+  );
+
+}
+
+app.get("/rentals", async (req, res) => {
+  const { customerId, gameId } = req.query;
+
+  if (customerId) {
+    const resultCustomerId = await connection.query(
+      `SELECT * FROM rentals WHERE rentals."customerId"=$1`,
+      [customerId]
+    )
+
+    res.send(resultCustomerId.rows);
+    return;
+  }
+
+  if (gameId) {
+    const resultGameId = await connection.query(
+      `SELECT * FROM rentals WHERE rentals."gameId"=$1`,
+      [gameId]
+    )
+    res.send(resultGameId.rows);
+    return;
+  }
+
+
+  const allRentals = await allRentalsGet();
+
+  res.send(allRentals.rows);
+
+})
+
+
+function calcDelayFee({ rentDate, daysRented, originalPrice, returnDate }) {
+  const devolutionDate = dayjs(returnDate);
+  //const devolutionDate = dayjs("2022-12-25");
+
+  const pricePerDay = originalPrice / daysRented;
+
+  //calcula dias de atraso
+  const delayDays = devolutionDate.diff(dayjs(rentDate), "day");
+  console.log("delayDays", delayDays);
+
+  //multiplica dias de atraso pelo preco por dia
+  const delayFee = delayDays * pricePerDay;
+  console.log("delayFee", delayFee);
+  //retona o valor 
+  return delayFee;
+
+}
+
+async function idRentalsExist(id){
+  const result = await connection.query(
+    `SELECT * FROM rentals WHERE rentals.id = $1`,
+    [id]);
+
+  if (result.rows.length <= 0) {
+    return false;
+  }else{
+    return true
+  }
+}
+
+app.post("/rentals/:id/return", async (req, res) => {
+  const id = req.params.id;
+
+  const result = await connection.query(
+    `SELECT * FROM rentals WHERE rentals.id = $1`,
+    [id]);
+
+  if (result.rows.length <= 0) {
+    res.status(404).send("Rentals id nao existe");
+    return;
+  }
+
+  if (result.rows[0].returnDate !== null) {
+    res.status(400).send("aluguel já finalizado!")
+    return;
+  }
+
+  result.rows[0].rentDate = dayjs(result.rows[0].rentDate).format("YYYY-MM-DD");
+  const today = dayjs().format("YYYY-MM-DD");
+  result.rows[0].returnDate = today;
+
+  const delayFeePay = calcDelayFee(result.rows[0]);
+  result.rows[0].delayFee = delayFeePay;
+  //atualiza dados returnDate no bd;
+  await connection.query(
+    `UPDATE rentals SET "returnDate"= $1 WHERE rentals.id = $2`,
+    [today, id]);
+
+  //atualiza delayFee no bd
+  await connection.query(
+    `UPDATE rentals SET "delayFee"= $1 WHERE rentals.id = $2`,
+    [delayFeePay, id]);
+
+  res.status(200).send(result.rows);
+  return;
+})
+
+app.delete("/rentals/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const idRentalsExist = await connection.query(
+    `SELECT * FROM rentals WHERE rentals.id = $1`,
+    [id]);
+
+  if (idRentalsExist.rows.length <= 0) {
+    res.status(404).send("Rentals id nao existe");
+    return;
+  }
+
+  if (idRentalsExist.rows[0].returnDate !== null) {
+    res.status(400).send("aluguel já finalizado!")
+    return;
+  }
+
+  try{
+  await connection.query(
+    `DELETE * FROM rentals WHERE rentals.id = $1`,
+    [id]);
+
+    res.status(200).send("DELETE com sucesso");
+  }catch(err){
+    console.log(err);
+    res.status(401).send("Não deletado");
+  }
+
+});
 
 app.listen(4000, () => {
   console.log("Server listening on port 4000.");
