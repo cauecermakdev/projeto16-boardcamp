@@ -455,20 +455,54 @@ app.post("/rentals", async (req, res) => {
 
 })
 
-async function allRentalsGet(){
+async function allRentalsGet() {
+
+  const allRentalsFormated = [];
+
   const allRentals = await connection.query(
     `SELECT * FROM rentals;`
   );
+  console.log(allRentals.rows[0]);
 
-  const customer = await connection.query(
-    `SELECT * FROM customers WHERE customers.id = $1`,
-    [customerId]
-  );
+  const nRentals = allRentals.rows.length;
 
-  const game = await connection.query(
-    `SELECT * FROM games WHERE games.id = $1`,
-    [gameId]
-  );
+  for (let i = 0; i < nRentals; i++) {
+    const customerResult = await connection.query(
+      `SELECT * FROM customers WHERE customers.id = $1`,
+      [allRentals.rows[i].customerId]
+    );
+
+    const gameResult = await connection.query(
+      `SELECT * FROM games WHERE games.id = $1`,
+      [allRentals.rows[i].gameId]
+    );
+    
+    let customer = customerResult.rows[0];
+    let game = gameResult.rows[0];
+  
+    delete customer.phone;
+    delete customer.cpf;
+    delete customer.birthday;
+
+    delete game.stockTotal;
+    delete game.pricePerDay;
+    delete game.image;
+
+
+    const categoryGame = await connection.query(
+      `SELECT * FROM categories WHERE categories.id = $1`,
+      [allRentals.rows[i].gameId]
+    );
+
+    game.categoryName = categoryGame.rows[0].name;
+
+    const newRegister = {...allRentals.rows[i],customer,game}
+
+    allRentalsFormated.push(newRegister);
+
+  } 
+
+  return allRentalsFormated;
 
 }
 
@@ -497,7 +531,7 @@ app.get("/rentals", async (req, res) => {
 
   const allRentals = await allRentalsGet();
 
-  res.send(allRentals.rows);
+  res.status(200).send(allRentals);
 
 })
 
@@ -520,14 +554,14 @@ function calcDelayFee({ rentDate, daysRented, originalPrice, returnDate }) {
 
 }
 
-async function idRentalsExist(id){
+async function idRentalsExist(id) {
   const result = await connection.query(
     `SELECT * FROM rentals WHERE rentals.id = $1`,
     [id]);
 
   if (result.rows.length <= 0) {
     return false;
-  }else{
+  } else {
     return true
   }
 }
@@ -586,13 +620,13 @@ app.delete("/rentals/:id", async (req, res) => {
     return;
   }
 
-  try{
-  await connection.query(
-    `DELETE * FROM rentals WHERE rentals.id = $1`,
-    [id]);
+  try {
+    await connection.query(
+      `DELETE * FROM rentals WHERE rentals.id = $1`,
+      [id]);
 
     res.status(200).send("DELETE com sucesso");
-  }catch(err){
+  } catch (err) {
     console.log(err);
     res.status(401).send("Não deletado");
   }
