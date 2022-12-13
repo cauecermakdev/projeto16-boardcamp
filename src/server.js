@@ -617,6 +617,7 @@ app.delete("/rentals/:id", async (req, res) => {
     return;
   }
 
+
   if (idRentalsExist.rows[0].returnDate !== null) {
     res.status(400).send("aluguel já finalizado!")
     return;
@@ -624,13 +625,13 @@ app.delete("/rentals/:id", async (req, res) => {
 
   try {
     await connection.query(
-      `DELETE * FROM rentals WHERE rentals.id = $1`,
+      `DELETE FROM rentals WHERE rentals.id = $1`,
       [id]);
 
     res.status(200).send("DELETE com sucesso");
   } catch (err) {
     console.log(err);
-    res.status(401).send("Não deletado");
+    res.status(401).send("Não deletado |"+ err);
   }
 
 });
