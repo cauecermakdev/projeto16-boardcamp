@@ -1,6 +1,7 @@
 import express from "express";
 import pg from "pg";
 import dayjs from 'dayjs';
+import cors from 'cors'; 
 
 const { Pool } = pg;
 
@@ -14,6 +15,7 @@ const connection = new Pool({
 
 const app = express();
 app.use(express.json());
+app.use(cors()); 
 
 app.get("/categories", async (req, res) => {
   const categories = await connection.query("SELECT * FROM categories");
