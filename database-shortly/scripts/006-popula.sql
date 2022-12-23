@@ -10,11 +10,13 @@
 ('Maria3','MariaNeryRafael3@gmail.com', '1234'),
 ('Maria4','MariaNeryRafael4@gmail.com', '1234'),
 ('Maria5','MariaNeryRafael5@gmail.com', '1234'),
-('Maria6','MariaNeryRafael6@gmail.com', '1234');
+('Maria6','MariaNeryRafael6@gmail.com', '1234'),
+('caue','cauecermak@gmail.com', '1234');
 
 INSERT INTO "session" ("token","email") VALUES
 ('1234567','joaoNeryRafael@gmail.com'),
-('2345678','MariaNeryRafael@gmail.com');
+('2345678','MariaNeryRafael@gmail.com'),
+('3456789','cauecermak@gmail.com');
 
 
 INSERT INTO "link" ("email","originalLink","shortUrl") VALUES
@@ -27,4 +29,5 @@ INSERT INTO "link" ("email","originalLink","shortUrl") VALUES
 ('MariaNeryRafael@gmail.com','https://google1.com','ahe3r4d2'),
 ('MariaNeryRafael@gmail.com','https://google2.com','ahe3r4d3'),
 ('MariaNeryRafael@gmail.com','https://google3.com','ahe3r4d4'),
-('MariaNeryRafael@gmail.com','https://google4.com','ahe3r4d5');
+('MariaNeryRafael@gmail.com','https://google4.com','ahe3r4d5'),
+('cauecermak@gmail.com','https://cauecermak.com','cauecaue');
