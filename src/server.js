@@ -1,7 +1,8 @@
 import express from "express";
 import pg from "pg";
-import dayjs from 'dayjs';
-import cors from 'cors'; 
+import cors from 'cors';
+import { v4 as uuidV4 } from "uuid";
+import { nanoid } from "nanoid";
 
 const { Pool } = pg;
 
@@ -9,29 +10,29 @@ const connection = new Pool({
   user: "postgres",
   host: "localhost",
   port: 5432,
-  database: "boardcamp",
+  database: "shortly_bd",
   password: "ra-16180339887",
 });
 
 const app = express();
 app.use(express.json());
-app.use(cors()); 
+app.use(cors());
 
 app.get("/categories", async (req, res) => {
   const categories = await connection.query("SELECT * FROM categories");
   res.send(categories.rows);
 });
 
-async function categoryNameExist(name) {
+async function userNameExist(email) {
 
-  const elementsWithName = await connection.query(
-    "SELECT * FROM categories WHERE categories.name = ($1)",
-    [name]
+  const userNameExist = await connection.query(
+    "SELECT * FROM usuario u WHERE u.email = ($1)",
+    [email]
   );
 
-  const nameExist = elementsWithName.rows[0];
+  const emailExist = userNameExist.rows[0];
 
-  if (nameExist) {
+  if (emailExist) {
     return true;
   } else {
     return false;
@@ -40,600 +41,327 @@ async function categoryNameExist(name) {
 }
 
 
-app.post("/categories", async (req, res) => {
-  const { name } = req.body;
+app.post("/signup", async (req, res) => {
+  //POST THUNDERCLIENT
+  /*   {
+      "name":"joao",
+      "email":"joaoneryrafael@gmail.com",
+      "password":"1234", 
+      "confirmPassword":"1234"
+    } */
+  const { name, email, password, confirmPassword } = req.body;
 
   //name não pode estar vazio ⇒ nesse caso, deve retornar status 400
   if (!name) {
-    res.status(400).send("name vazio");
+    res.status(422).send("name vazio");
     return;
   }
 
   //name não pode ser um nome de categoria já existente ⇒ nesse caso deve retornar status 409
-  if (await categoryNameExist(name)) {
-    res.status(409).send("name já existe!");
+  if (await userNameExist(email)) {
+    res.status(409).send("email já cadastrado!");
+    return;
+  }
+
+  //nao requisito
+  if (password !== confirmPassword) {
+    res.status(422).send("senha diferente de confirmação!");
     return;
   }
 
   await connection.query(
-    "INSERT INTO categories (name) VALUES ($1)",
-    [name]
+    "INSERT INTO usuario (name,email,password) VALUES ($1,$2,$3)",
+    [name, email, password]
   );
 
-  res.sendStatus(201);
+  res.status(201).send("SUCESSO na Inserção do usuário.");
 });
 
+async function isUserSignUp(email, password) {
+  let errorMsg = "";
+  //usuarioExiste ?
+  if (!await userNameExist(email)) {
+    errorMsg += "Email não cadastrado";
+    return errorMsg;
+  }
 
-async function nameGameExist(name) {
-  const nameGameList = await connection.query(
-    "SELECT * FROM games WHERE games.name = ($1)",
-    [name]
-  );
+  const user = await connection.query(
+    `SELECT * from usuario u WHERE u.email = $1 AND u.password = $2`,
+    [email, password]);
 
-  const nameExist = nameGameList.rows[0];
-
-  if (nameExist) {
-    return true;
+  if (user.rows.length > 0) {
+    return errorMsg;;
   } else {
-    console.log("name n existe");
-    return false;
-  }
-}
-
-function errorGamesPost(gamesPostObj) {
-  let errorMessage = "";
-  if (!gamesPostObj.name) {
-    errorMessage += "nome vazio |";
-  }
-  if (gamesPostObj.stockTotal < 0 || gamesPostObj.pricePerDay < 0) {
-    errorMessage += "stockTotal ou pricePerDay < 0 |";
-  }
-  console.log("errorMessage", errorMessage);
-  return errorMessage;
+    errorMsg += "Senha incorreta";
+    return errorMsg;
+  };
 
 }
 
-app.post("/games", async (req, res) => {
-  const { name, image, stockTotal, categoryId, pricePerDay } = req.body;
-  console.log(req.body);
+app.post("/signin", async (req, res) => {
+  const { email, password } = req.body;
 
-  const error400 = errorGamesPost(req.body);
-  if (error400) {
-    console.log("entra erro 400");
-    res.status(400).send(error400);
+  const token = uuidV4();
+
+  //name não pode estar vazio ⇒ nesse caso, deve retornar status 400
+  if (!email || !password) {
+    res.status(422).send("um dos campos vazio");
     return;
   }
 
-  if (await nameGameExist(name)) {
-    res.status(409).send("game name already exists");
+  const errorMsg = await isUserSignUp(email, password);
+  if (errorMsg) {
+    res.status(422).send(errorMsg);
     return;
   }
 
   await connection.query(
-    `INSERT INTO games (name, image, "stockTotal", "categoryId", "pricePerDay") VALUES ($1, $2, $3, $4, $5)`,
-    [name, image, stockTotal, categoryId, pricePerDay]
+    "INSERT INTO session (token, email) VALUES ($1,$2)",
+    [token, email]
   );
 
-  res.sendStatus(201);
+  res.status(201).send(token);
 });
 
-
-app.get("/games", async (req, res) => {
-  const { name } = req.query;
-  /* const nameLowerCase = name.toLowerCase();
-  const nameUpCase = nameLowerCase[0].toUpperCase() + nameLowerCase.substring(1); */
-  //res.send(nameLowerCase + " e " + nameUpCase);
-
-  let games = undefined;
-
-  if (name) {
-    const nameLowerCase = name.toLowerCase();
-    const nameUpCase = nameLowerCase[0].toUpperCase() + nameLowerCase.substring(1);
-
-    games = await connection.query(
-      `SELECT games.*, categories.name as "categoryName" FROM games JOIN categories ON games."categoryId" = categories.id WHERE games.name LIKE $1 OR games.name LIKE $2`,
-      [`${nameLowerCase}%`, `${nameUpCase}%`]
-    );
-  } else {
-    games = await connection.query(
-      `SELECT games.*, categories.name as "categoryName" FROM games JOIN categories ON games."categoryId" = categories.id `
-    );
-  }
-
-  res.send(games.rows);
-});
-
-function isValidDate(dateString) {
-  var regEx = /^\d{4}-\d{2}-\d{2}$/;
-  if (!dateString.match(regEx)) return false;  // Invalid format
-  var d = new Date(dateString);
-  var dNum = d.getTime();
-  if (!dNum && dNum !== 0) return false; // NaN value, Invalid date
-  return d.toISOString().slice(0, 10) === dateString;
-}
-
-function validateCustomer({ cpf, name, phone, birthday }) {
-  let errorMessage = "";
-
-  if (!cpf.length === 11) {
-    errorMessage += "CPF tem que ter 11 caracteres |";
-  }
-  if (phone.length !== 10 && phone.length !== 11) {
-    errorMessage += "phone tem que ter 10 ou 11 caracteres |";
-  }
-  if (!name) {
-    errorMessage += "name não pode ser vazio |";
-  }
-
-  const birthDate = isValidDate(birthday);
-
-  if (!birthDate) {
-    errorMessage += "data inválida |";
-  }
-
-  return errorMessage;
-}
-
-async function cpfExist(cpf) {
-  console.log("cpf", cpf);
-
-  const cpfAlreadyExist = await connection.query(
-    `SELECT * FROM customers WHERE customers.cpf = ($1)`, [cpf]
-  );
-
-  /* console.log("cpfAlreadyExist", cpfAlreadyExist.rows); */
-
-  if (cpfAlreadyExist.rows[0]) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
-
-//inserir customer
-app.post("/customers", async (req, res) => {
-
-  const customer = req.body;
-  let { name, cpf, phone, birthday } = req.body;
-
-  const date = dayjs(birthday).format("YYYY-MM-DD");
-  console.log(date);
-
-
-  /*   {
-      id: 1,
-      name: 'João Alfredo',
-      phone: '21998899222',
-      cpf: '01234567890',
-      birthday: '1992-10-05'
-    } */
-  const errorMsg400 = validateCustomer(customer);
-  if (errorMsg400) {
-    res.status(400).send(errorMsg400);
-    return;
-  };
-
-  if (await cpfExist(customer.cpf)) {
-    res.status(409).send("cpf já existe!");
-    return;
-  }
-
-  await connection.query("INSERT INTO customers (name, phone, cpf, birthday) VALUES ($1,$2,$3,$4)",
-    [name, phone, cpf, date]
-  );
-
-  res.status(201).send("customers inserido com sucesso");
-
-});
-
-function formatingDateToShow(result) {
-  for (let i = 0; i < result.rows.length; i++) {
-    result.rows[i].birthday = dayjs(result.rows[i].birthday).format("YYYY-MM-DD");
-  }
-}
-
-
-app.get("/customers", async (req, res) => {
-  const { cpf } = req.query;
-  let customers = undefined;
-
-  if (cpf) {
-    customers = await connection.query(
-      `SELECT * FROM customers WHERE customers.cpf LIKE $1`,
-      [`${cpf}%`]
-    );
-  } else {
-    customers = await connection.query(
-      `SELECT * FROM customers;`
-    );
-  }
-
-  formatingDateToShow(customers);
-
-  res.send(customers.rows);
-});
-
-app.get("/customers/:id", async (req, res) => {
-  const id = req.params.id;
+async function authorizationValidated(authorization) {
 
   const result = await connection.query(
-    `SELECT * FROM customers WHERE customers.id = $1`,
-    [id]
-  );
-
-  if (result.rows.length > 0) {
-    res.send(result.rows);
-  } else {
-    res.status(404).send("Não existe cliente com esse id");
-  }
-
-});
-
-
-app.put("/customers/:id", async (req, res) => {
-
-  const id = req.params.id;
-
-  const bodyUpdate = req.body;
-  let { name, cpf, phone, birthday } = req.body;
-
-  const date = dayjs(birthday).format("YYYY-MM-DD");
-
-
-
-  /*  {
-     name: 'João Alfredo',
-     phone: '21998899222',
-     cpf: '01234567890',
-     birthday: '1992-10-05'
-   } */
-
-  const errorMsg400 = validateCustomer(bodyUpdate);
-  if (errorMsg400) {
-    res.status(400).send(errorMsg400);
-    return;
-  };
-
-  //*************************** */
-  //nao deixa dar update em cpf que ja existe
-
-  /*  if(await cpfExist(cpf)){
-    res.status(409).send("cpf já existe!");
-    return;
-  } */
-
-  const idPessoaComCpf = await connection.query(
-    `SELECT customers.id FROM customers WHERE cpf = $1 `,
-    [cpf]
-  );
-
-  let isSamePerson = true;
-
-  const isThereCpfInRegister = idPessoaComCpf.rows.length > 0;
-  if (isThereCpfInRegister) {
-    isSamePerson = (idPessoaComCpf.rows[0].id === parseInt(id));
-
-  }
-
-
-
-  if (isSamePerson) {
-
-    try {
-      await connection.query(
-        `UPDATE customers SET name = $1, phone = $2, cpf = $3, birthday = $4 WHERE customers.id = $5 `,
-        [name, phone, cpf, date, id]
-      );
-      res.status(200).send("Update customers com sucesso");
-    } catch {
-      res.status(400).send("Update não realizado");
-    };
-
-  } else {
-    res.status(409).send("CPF existente em outro usuário, você não pode atualizar");
-  }
-
-
-})
-
-
-/* app.get("/api/products", async (req, res) => {
-  const products = await connection.query("SELECT * FROM produtos");
-  res.send(products.rows);
-}); */
-
-async function originalPriceOf(gameId, daysRented) {
-  console.log("entra originalPriceOf");
-  const idGameSearch = await connection.query(
-    `SELECT games."pricePerDay" FROM games WHERE games.id = $1`,
-    [gameId]
-  );
-
-  let totalPrice = 0;
-  //if(idGameSearch.rows[0] && daysRented > 0){
-  const priceGame = idGameSearch.rows[0].pricePerDay;
-  totalPrice = parseInt(priceGame) * parseInt(daysRented);
-  //}
-  console.log(totalPrice);
-  return totalPrice;
-}
-
-async function customerNotExist(id) {
-  const result = await connection.query(
-    `SELECT * FROM customers WHERE customers.id = $1`,
-    [id]
-  )
-  if (result.rows[0]) {
-    return false;
-  } else {
-    return true;
-  }
-}
-
-async function idGameExist(gameId) {
-
-  const result = await connection.query(
-    `SELECT * FROM games WHERE games.id = $1`,
-    [gameId]
-  );
+    `SELECT * FROM session s WHERE s.token = ($1)`,
+    [authorization]);
 
   if (result.rows.length > 0) {
     return true;
   } else {
     return false;
   }
-
 }
 
-async function numberCurrentRentals(gameId) {
+app.post("/urls/shorten", async (req, res) => {
+
+  const { authorization } = req.headers;
+  const token = authorization?.replace("Bearer ", "");
+  const { url } = req.body;
+
+
+  if (!authorization) {
+    res.status(401).send("header não enviado");
+    return;
+  } else if (!await authorizationValidated(token)) {
+    res.status(401).send("Token inválido");
+    return;
+  }
+
+  if (!token) {
+    res.send(401).status("Sem token!")
+    return;
+  }
+
+
+  if (!url) {
+    res.status(422).send("Sem url!")
+    return;
+  }
+
+  if (url.substring(0, 8) !== 'https://' && url.substring(0, 7) !== 'http://') {
+    res.status(422).send("Url não começa com https:// ou http://");
+    return;
+  }
+
+
   const result = await connection.query(
-    `SELECT * FROM rentals WHERE rentals."gameId" = $1`,
-    [gameId]
+    `SELECT s.email FROM session s WHERE s.token = $1`,
+    [token]
   );
 
-  return result.rows.length;
-}
-
-async function isThereStock(gameId) {
-  const result = await connection.query(
-    `SELECT games."stockTotal" FROM games WHERE games.id = $1`,
-    [gameId]);
-
-  const gameStock = result.rows[0].stockTotal;
-
-  const numCurrentRentals = await numberCurrentRentals(gameId);
-
-  if (numCurrentRentals < gameStock) {
-    return true;
-  } else {
-    return false;
+  const email = result.rows[0].email;
+  if (!email) {
+    res.status(422).send("Token inválido!");
   }
 
-}
+  //preciso buscar email, original link e shortly link
+  //inserir na tabela link
 
-app.post("/rentals", async (req, res) => {
-  const { customerId, gameId, daysRented } = req.body;
-
-  //
-  if (await customerNotExist(customerId)) {
-    res.status(400).send("cliente não existe")
-    return;
-  }
-  //
-  if (!await idGameExist(gameId)) {
-    res.status(400).send("id game not exist");
-    return;
-  }
-  //
-  if (daysRented < 0) {
-    res.status(400).send(daysRented < 0);
-    return;
-  }
-
-  if (!await isThereStock(gameId)) {
-    res.status(400).send("Não tem mais em estoque, estão todos alugados");
-    return;
-  }
-
-  const today = dayjs().format("YYYY-MM-DD");
-  //
-  const originalPrice = await originalPriceOf(gameId, daysRented);
-
-  /*  console.log([customerId, gameId, today, daysRented, null, originalPrice, null]) */
-
-  try {
-    const result = await connection.query(
-      `INSERT INTO rentals ("customerId","gameId","rentDate","daysRented","returnDate","originalPrice","delayFee")
-      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [customerId, gameId, today, daysRented, null, originalPrice, null]
-    );
-
-    res.status(201).send("rentals inserido");
-  } catch (err) {
-    console.log(err);
-    res.status(400).send("rentals nao inserido");
-  }
-
-})
-
-async function allRentalsGet() {
-
-  const allRentalsFormated = [];
-
-  const allRentals = await connection.query(
-    `SELECT * FROM rentals;`
-  );
-  console.log(allRentals.rows[0]);
-
-  const nRentals = allRentals.rows.length;
-
-  for (let i = 0; i < nRentals; i++) {
-    const customerResult = await connection.query(
-      `SELECT * FROM customers WHERE customers.id = $1`,
-      [allRentals.rows[i].customerId]
-    );
-
-    const gameResult = await connection.query(
-      `SELECT * FROM games WHERE games.id = $1`,
-      [allRentals.rows[i].gameId]
-    );
-    
-    let customer = customerResult.rows[0];
-    let game = gameResult.rows[0];
-  
-    delete customer.phone;
-    delete customer.cpf;
-    delete customer.birthday;
-
-    delete game.stockTotal;
-    delete game.pricePerDay;
-    delete game.image;
+  const shortUrl = nanoid(8);
 
 
-    const categoryGame = await connection.query(
-      `SELECT * FROM categories WHERE categories.id = $1`,
-      [allRentals.rows[i].gameId]
-    );
-
-    game.categoryName = categoryGame.rows[0].name;
-
-    const newRegister = {...allRentals.rows[i],customer,game}
-
-    allRentalsFormated.push(newRegister);
-
-  } 
-
-  return allRentalsFormated;
-
-}
-
-app.get("/rentals", async (req, res) => {
-  const { customerId, gameId } = req.query;
-
-  if (customerId) {
-    const resultCustomerId = await connection.query(
-      `SELECT * FROM rentals WHERE rentals."customerId"=$1`,
-      [customerId]
-    )
-
-    res.send(resultCustomerId.rows);
-    return;
-  }
-
-  if (gameId) {
-    const resultGameId = await connection.query(
-      `SELECT * FROM rentals WHERE rentals."gameId"=$1`,
-      [gameId]
-    )
-    res.send(resultGameId.rows);
-    return;
-  }
+  await connection.query(
+    `INSERT INTO link ("email","originalLink","shortUrl") VALUES($1,$2,$3)`,
+    [email, url, shortUrl]);
 
 
-  const allRentals = await allRentalsGet();
-
-  res.status(200).send(allRentals);
-
+  res.status(201).send({ shortUrl: shortUrl });
 })
 
 
-function calcDelayFee({ rentDate, daysRented, originalPrice, returnDate }) {
-  const devolutionDate = dayjs(returnDate);
-  //const devolutionDate = dayjs("2022-12-25");
-
-  const pricePerDay = originalPrice / daysRented;
-
-  //calcula dias de atraso
-  const delayDays = devolutionDate.diff(dayjs(rentDate), "day");
-  console.log("delayDays", delayDays);
-
-  //multiplica dias de atraso pelo preco por dia
-  const delayFee = delayDays * pricePerDay;
-  console.log("delayFee", delayFee);
-  //retona o valor 
-  return delayFee;
-
-}
-
-async function idRentalsExist(id) {
-  const result = await connection.query(
-    `SELECT * FROM rentals WHERE rentals.id = $1`,
-    [id]);
-
-  if (result.rows.length <= 0) {
-    return false;
-  } else {
-    return true
-  }
-}
-
-app.post("/rentals/:id/return", async (req, res) => {
+app.get("/urls/:id", async (req, res) => {
   const id = req.params.id;
 
+  if (!id) {
+    res.status(404).send("Não tem id");
+    return;
+  }
+
   const result = await connection.query(
-    `SELECT * FROM rentals WHERE rentals.id = $1`,
+    `SELECT * FROM link l WHERE l.id =$1`,
     [id]);
 
-  if (result.rows.length <= 0) {
-    res.status(404).send("Rentals id nao existe");
+  const link = result.rows[0];
+  if (!link) {
+    res.status(404).send("Id não existente na base de dados")
     return;
   }
 
-  if (result.rows[0].returnDate !== null) {
-    res.status(400).send("aluguel já finalizado!")
+
+  const objGetUrl = {
+    id: link.id,
+    shotUrl: link.shortUrl,
+    url: link.originalLink
+  }
+
+  res.send(objGetUrl)
+});
+
+
+
+app.get("/urls/open/:shortUrl", async (req, res) => {
+  const shortUrl = req.params.shortUrl;
+
+  if (!shortUrl) {
+    res.status(404).send("Não tem shortUrl");
     return;
   }
 
-  result.rows[0].rentDate = dayjs(result.rows[0].rentDate).format("YYYY-MM-DD");
-  const today = dayjs().format("YYYY-MM-DD");
-  result.rows[0].returnDate = today;
+  const result = await connection.query(
+    `SELECT l."originalLink" FROM link l WHERE l."shortUrl" =$1`,
+    [shortUrl]);
 
-  const delayFeePay = calcDelayFee(result.rows[0]);
-  result.rows[0].delayFee = delayFeePay;
-  //atualiza dados returnDate no bd;
+  const url = result.rows[0].originalLink;
+
+
+  if (!url) {
+    res.status(404).send("url não existe")
+    return;
+  }
+
   await connection.query(
-    `UPDATE rentals SET "returnDate"= $1 WHERE rentals.id = $2`,
-    [today, id]);
+    `UPDATE link l SET "visitCount" = "visitCount"+1 WHERE l."shortUrl" = $1`,
+    [shortUrl])
 
-  //atualiza delayFee no bd
-  await connection.query(
-    `UPDATE rentals SET "delayFee"= $1 WHERE rentals.id = $2`,
-    [delayFeePay, id]);
-
-  res.status(200).send(result.rows);
+  res.redirect(`${url}`);
   return;
-})
+  //res.send(objGetUrl)
+});
 
-app.delete("/rentals/:id", async (req, res) => {
+
+async function deleteUrl(id) {
+  await connection.query(
+    `DELETE FROM link l WHERE l.id =$1`,
+    [id])
+}
+
+app.delete("/urls/:id", async (req, res) => {
+
+  const { authorization } = req.headers;
+  const token = authorization?.replace("Bearer ", "");
   const id = req.params.id;
 
-  const idRentalsExist = await connection.query(
-    `SELECT * FROM rentals WHERE rentals.id = $1`,
-    [id]);
-
-  if (idRentalsExist.rows.length <= 0) {
-    res.status(404).send("Rentals id nao existe");
+  if (!id) {
+    res.status(404).send("Não tem id");
     return;
   }
 
-
-  if (idRentalsExist.rows[0].returnDate !== null) {
-    res.status(400).send("aluguel já finalizado!")
+  if (!authorization || !token) {
+    res.status(401).send("Authorization incorreto");
     return;
   }
 
-  try {
-    await connection.query(
-      `DELETE FROM rentals WHERE rentals.id = $1`,
-      [id]);
+  const user = await connection.query(
+    `SELECT l."originalLink" FROM link l, session s WHERE l.id = $1 AND s.token = $2`,
+    [id, token]);
 
-    res.status(200).send("DELETE com sucesso");
-  } catch (err) {
-    console.log(err);
-    res.status(401).send("Não deletado |"+ err);
+  const isUserOwnerUrl = user.rows.length > 0 ? true : false;
+
+  if (!isUserOwnerUrl) {
+    res.status(401).send("Url não pertence ao usuário");
+    return;
+  } else {
+    await deleteUrl(id);
+    res.status(204).send("url encurtada excluída!")
+    return;
   }
 
+});
+
+
+app.get("/users/me", async (req, res) => {
+  const { authorization } = req.headers;
+  const token = authorization?.replace("Bearer ", "");
+
+  if (!await authorizationValidated(token)) {
+    res.status(401).send("invalid authorizantion ");
+    return;
+  }
+
+  const id = await connection.query(
+    `
+    SELECT u.id 
+    FROM usuario u
+    JOIN session s
+    ON s.token = $1 AND s.email = u.email
+    `,
+    [token]
+  );
+
+  const idUser = id.rows[0].id;
+
+  if(!idUser){
+    res.status(404).send("Usuário não existe");
+  }
+
+  const result = await connection.query(
+    `
+    SELECT u.id,u.name,u.email, SUM(l."visitCount") as "visitCount"
+    FROM usuario u
+    JOIN link l 
+    ON u.email = l.email AND u.id = $1
+    GROUP BY u.id, u.name,u.email
+    `,
+    [idUser]
+  );
+
+  const users = result.rows;
+
+  for (let i = 0; i < users.length; i++) {
+    const links = await connection.query(
+      `
+        SELECT l.id,l."shortUrl",l."originalLink" as url, l."visitCount"
+        FROM link l  
+        WHERE l.email = $1
+        `,
+      [users[i].email]
+    );
+
+    const shortnedUrls = links.rows;
+    delete shortnedUrls.email;
+
+    users[i] = { ...users[i], shortnedUrls }
+  }
+
+    res.status(200).send(users);
+});
+
+app.get('/ranking',async(req,res)=>{
+  const result = await connection.query(
+    `SELECT u.id, u.name, COUNT(l."visitCount") as "linksCount", SUM(l."visitCount") as "visitCount"  
+    FROM usuario u
+    JOIN link l 
+    ON u.email = l.email
+    GROUP BY u.id, u.name,u.email
+    ORDER BY "visitCount" DESC
+    LIMIT 10
+    `);
+
+  res.send(result.rows);
 });
 
 app.listen(4000, () => {

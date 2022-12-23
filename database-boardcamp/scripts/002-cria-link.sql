@@ -1,0 +1,8 @@
+CREATE TABLE link(
+"id" SERIAL NOT NULL,
+"userEmail" VARCHAR(30) NOT NULL,
+  CONSTRAINT "PK_LINK"   PRIMARY KEY ("id"),
+  CONSTRAINT "FK_USER" FOREIGN KEY ("userEmail")
+    REFERENCES user("email")
+    ON DELETE CASCADE
+);
